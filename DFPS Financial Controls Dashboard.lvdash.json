@@ -1,0 +1,544 @@
+{
+  "datasets": [
+    {
+      "name": "8d0fb0ab",
+      "displayName": "Data Quality Score",
+      "queryLines": [
+        "SELECT \n",
+        "    ROUND(100 - AVG(failure_rate), 2) as value,\n",
+        "    'Financial Data Quality Score' as label\n",
+        "FROM validation_results\n",
+        "WHERE validation_date = CURRENT_DATE();\n"
+      ]
+    },
+    {
+      "name": "5ac92cef",
+      "displayName": "Critical Issues",
+      "queryLines": [
+        "--Critical Issues\n",
+        "SELECT \n",
+        "    COUNT(DISTINCT record_id) as value,\n",
+        "    'Critical Issues' as label\n",
+        "FROM failed_validation_records\n",
+        "WHERE risk_level = 'Critical'\n",
+        "    AND DATE(failure_timestamp) = CURRENT_DATE();"
+      ]
+    },
+    {
+      "name": "542bbede",
+      "displayName": "Dollars at Risk",
+      "queryLines": [
+        "SELECT \n",
+        "    CONCAT('$', FORMAT_NUMBER(SUM(financial_impact), 0)) as value,\n",
+        "    'Dollars at Risk' as label\n",
+        "FROM failed_validation_records\n",
+        "WHERE DATE(failure_timestamp) = CURRENT_DATE();"
+      ]
+    },
+    {
+      "name": "15a0ab86",
+      "displayName": "Validation Results by Category",
+      "queryLines": [
+        "SELECT \n",
+        "    rule_category,\n",
+        "    SUM(records_failed) as failed_records\n",
+        "FROM validation_results\n",
+        "WHERE validation_date = CURRENT_DATE()\n",
+        "GROUP BY rule_category\n",
+        "ORDER BY failed_records DESC;"
+      ]
+    },
+    {
+      "name": "51fa211d",
+      "displayName": "Top Contract Issues",
+      "queryLines": [
+        "-- Contract Issues Requiring Immediate Attention (Databricks/Spark SQL)\n",
+        "SELECT \n",
+        "    c.contract_number,\n",
+        "    c.vendor_id,\n",
+        "    v.vendor_name,\n",
+        "    c.contract_amount,\n",
+        "    c.contract_status,\n",
+        "    c.end_date,\n",
+        "    concat_ws('; ', collect_set(fvr.failure_reason)) AS compliance_issues,\n",
+        "    COUNT(DISTINCT fvr.rule_id) AS number_of_issues\n",
+        "FROM contracts c\n",
+        "LEFT JOIN vendors v \n",
+        "  ON c.vendor_id = v.vendor_id\n",
+        "JOIN failed_validation_records fvr \n",
+        "  ON c.contract_id = fvr.record_id\n",
+        "WHERE fvr.failure_timestamp >= date_trunc('DAY', current_timestamp())\n",
+        "  AND fvr.failure_timestamp <  date_add(date_trunc('DAY', current_timestamp()), 1)\n",
+        "  AND fvr.record_type = 'Contract'\n",
+        "GROUP BY \n",
+        "    c.contract_number, c.vendor_id, v.vendor_name, \n",
+        "    c.contract_amount, c.contract_status, c.end_date\n",
+        "ORDER BY number_of_issues DESC, c.contract_amount DESC;\n"
+      ]
+    },
+    {
+      "name": "aaf78d83",
+      "displayName": "Vendor Risk",
+      "queryLines": [
+        "-- Vendor Compliance Status\n",
+        "SELECT \n",
+        "    v.vendor_id,\n",
+        "    v.vendor_name,\n",
+        "    v.vendor_type,\n",
+        "    v.vendor_status,\n",
+        "    v.last_audit_date,\n",
+        "    DATEDIFF(CURRENT_DATE(), v.last_audit_date) as days_since_audit,\n",
+        "    COUNT(DISTINCT c.contract_id) as active_contracts,\n",
+        "    COALESCE(SUM(c.contract_amount), 0) as total_contract_value,\n",
+        "    COUNT(DISTINCT fvr.rule_id) as compliance_issues\n",
+        "FROM vendors v\n",
+        "LEFT JOIN contracts c ON v.vendor_id = c.vendor_id AND c.contract_status = 'Active'\n",
+        "LEFT JOIN failed_validation_records fvr ON v.vendor_id = fvr.record_id \n",
+        "    AND fvr.record_type = 'Vendor'\n",
+        "    AND DATE(fvr.failure_timestamp) = CURRENT_DATE()\n",
+        "WHERE v.vendor_status = 'Active'\n",
+        "GROUP BY v.vendor_id, v.vendor_name, v.vendor_type, v.vendor_status, v.last_audit_date\n",
+        "ORDER BY compliance_issues DESC, total_contract_value DESC\n",
+        "LIMIT 20;"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "14ce72ab",
+      "displayName": "DFPS Finance",
+      "layout": [
+        {
+          "widget": {
+            "name": "data-quality-score-counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8d0fb0ab",
+                  "fields": [
+                    {
+                      "name": "sum(value)",
+                      "expression": "SUM(`value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Data Quality Score"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(value)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "critical-issues",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5ac92cef",
+                  "fields": [
+                    {
+                      "name": "sum(value)",
+                      "expression": "SUM(`value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Critical Issues"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(value)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "dollars-at-risk",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "542bbede",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "expression": "`value`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Dollars at Risk"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "value"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "validation-results-by-category",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "15a0ab86",
+                  "fields": [
+                    {
+                      "name": "rule_category",
+                      "expression": "`rule_category`"
+                    },
+                    {
+                      "name": "sum(failed_records)",
+                      "expression": "SUM(`failed_records`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Validation Results by Category"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "rule_category",
+                  "axis": {
+                    "labelAngle": 0
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Vendor Compliance",
+                        "Contract Integrity",
+                        "Referential Integrity",
+                        "Payment Integrity",
+                        "Contract Compliance",
+                        "Financial Controls"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(failed_records)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-contract-issues",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "51fa211d",
+                  "fields": [
+                    {
+                      "name": "contract_amount",
+                      "expression": "`contract_amount`"
+                    },
+                    {
+                      "name": "number_of_issues",
+                      "expression": "`number_of_issues`"
+                    },
+                    {
+                      "name": "compliance_issues",
+                      "expression": "`compliance_issues`"
+                    },
+                    {
+                      "name": "contract_number",
+                      "expression": "`contract_number`"
+                    },
+                    {
+                      "name": "contract_status",
+                      "expression": "`contract_status`"
+                    },
+                    {
+                      "name": "vendor_id",
+                      "expression": "`vendor_id`"
+                    },
+                    {
+                      "name": "vendor_name",
+                      "expression": "`vendor_name`"
+                    },
+                    {
+                      "name": "end_date",
+                      "expression": "`end_date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Top Contract Issues"
+              },
+              "headerHeight": 30,
+              "displayRowNumbers": true,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "contract_amount"
+                  },
+                  {
+                    "fieldName": "number_of_issues"
+                  },
+                  {
+                    "fieldName": "compliance_issues"
+                  },
+                  {
+                    "fieldName": "contract_number"
+                  },
+                  {
+                    "fieldName": "contract_status"
+                  },
+                  {
+                    "fieldName": "vendor_id"
+                  },
+                  {
+                    "fieldName": "vendor_name"
+                  },
+                  {
+                    "fieldName": "end_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "vendor-risk",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "aaf78d83",
+                  "fields": [
+                    {
+                      "name": "active_contracts",
+                      "expression": "`active_contracts`"
+                    },
+                    {
+                      "name": "compliance_issues",
+                      "expression": "`compliance_issues`"
+                    },
+                    {
+                      "name": "days_since_audit",
+                      "expression": "`days_since_audit`"
+                    },
+                    {
+                      "name": "total_contract_value",
+                      "expression": "`total_contract_value`"
+                    },
+                    {
+                      "name": "vendor_id",
+                      "expression": "`vendor_id`"
+                    },
+                    {
+                      "name": "vendor_name",
+                      "expression": "`vendor_name`"
+                    },
+                    {
+                      "name": "vendor_status",
+                      "expression": "`vendor_status`"
+                    },
+                    {
+                      "name": "vendor_type",
+                      "expression": "`vendor_type`"
+                    },
+                    {
+                      "name": "last_audit_date",
+                      "expression": "`last_audit_date`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Vendor Risk"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "active_contracts"
+                  },
+                  {
+                    "fieldName": "compliance_issues"
+                  },
+                  {
+                    "fieldName": "days_since_audit"
+                  },
+                  {
+                    "fieldName": "total_contract_value"
+                  },
+                  {
+                    "fieldName": "vendor_id"
+                  },
+                  {
+                    "fieldName": "vendor_name"
+                  },
+                  {
+                    "fieldName": "vendor_status"
+                  },
+                  {
+                    "fieldName": "vendor_type"
+                  },
+                  {
+                    "fieldName": "last_audit_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "e2407d0a",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
